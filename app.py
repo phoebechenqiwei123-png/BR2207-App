@@ -12,16 +12,15 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 from distribution_fitter import (
-    load_from_paste,
     fit_best_distribution,
     extract_winning_parameters,
     calculate_moments
 )
 
 
-# ==================================================
+# ============================================================
 # PAGE SETUP
-# ==================================================
+# ============================================================
 
 st.set_page_config(
     page_title="Distribution Fit Explorer",
@@ -44,64 +43,79 @@ st.info(
 )
 
 
-# ==================================================
-# 1. DATA INPUT
-# ==================================================
+# ============================================================
+# 1. INPUT YOUR DATA
+# ============================================================
 
 st.header("1. Input Your Data")
 
 
-# ==================================================
-# INPUT FORM
-# ==================================================
+# IMPORTANT:
+# This radio button is OUTSIDE the form.
+# This means changing Paste → Upload immediately updates the page.
 
-with st.form("data_input_form"):
-
-    input_method = st.radio(
-        "How would you like to enter your data?",
-        ["Paste Values", "Upload CSV/Excel"]
-    )
-
-    pasted_data = ""
-    uploaded_file = None
+input_method = st.radio(
+    "How would you like to enter your data?",
+    ["Paste Values", "Upload CSV/Excel"]
+)
 
 
-    if input_method == "Paste Values":
+# ============================================================
+# PASTE VALUES
+# ============================================================
+
+if input_method == "Paste Values":
+
+    with st.form("paste_form"):
 
         pasted_data = st.text_area(
             "Paste your numerical values:",
             placeholder="Example: 12.5, 13.2, 14.8, 15.1..."
         )
 
-    else:
+        uploaded_file = None
+
+        analyse_button = st.form_submit_button(
+            "🔍 Analyse Data",
+            type="primary"
+        )
+
+
+# ============================================================
+# UPLOAD CSV / EXCEL
+# ============================================================
+
+else:
+
+    with st.form("upload_form"):
 
         uploaded_file = st.file_uploader(
             "Upload your dataset",
             type=["csv", "xlsx", "xls"]
         )
 
+        pasted_data = ""
 
-    analyse_button = st.form_submit_button(
-        "🔍 Analyse Data",
-        type="primary"
-    )
+        analyse_button = st.form_submit_button(
+            "🔍 Analyse Data",
+            type="primary"
+        )
 
 
-# ==================================================
+# ============================================================
 # RUN ANALYSIS
-# ==================================================
+# ============================================================
 
 if analyse_button:
 
     try:
 
-        # ==================================================
-        # STEP 1: LOAD DATA
-        # ==================================================
+        # ====================================================
+        # LOAD PASTED DATA
+        # ====================================================
 
         if input_method == "Paste Values":
 
-            # Empty input
             if pasted_data.strip() == "":
 
                 st.error(
@@ -111,49 +125,61 @@ if analyse_button:
                 st.stop()
 
 
-            # Try reading pasted values
+            # Convert pasted text into numerical data
             try:
-                # Allow commas, spaces and new lines
+
+                # Allows commas, spaces and new lines
                 cleaned_data = pasted_data.replace(",", " ")
-            
+
                 values = cleaned_data.split()
-            
+
                 data = np.array(
                     [float(value) for value in values],
                     dtype=float
                 )
-            
+
             except ValueError:
+
                 st.error(
                     "⚠️ Invalid data detected. Please enter numerical values "
                     "only, separated by commas, spaces, or new lines."
                 )
+
                 st.stop()
 
 
-            # NaN or infinite values
-            if not np.all(
-                np.isfinite(data)
-            ):
+            # Minimum sample size
+            if len(data) < 5:
 
                 st.error(
-                    "⚠️ Your data contains missing or invalid values. "
-                    "Please remove them and try again."
+                    "⚠️ Too few observations. Please enter at least "
+                    "5 numerical values."
                 )
 
                 st.stop()
 
 
-        # ==================================================
-        # FILE UPLOAD
-        # ==================================================
+            # Check for NaN / infinity
+            if not np.all(np.isfinite(data)):
+
+                st.error(
+                    "⚠️ Your data contains invalid numerical values. "
+                    "Please remove missing or infinite values."
+                )
+
+                st.stop()
+
+
+        # ====================================================
+        # LOAD CSV / EXCEL
+        # ====================================================
 
         else:
 
             if uploaded_file is None:
 
                 st.error(
-                    "⚠️ Please upload a CSV or Excel file first."
+                    "⚠️ Please upload a CSV or Excel file before analysing."
                 )
 
                 st.stop()
@@ -162,9 +188,9 @@ if analyse_button:
             file_name = uploaded_file.name.lower()
 
 
-            # ----------------------------------------------
+            # ------------------------------------------------
             # READ FILE
-            # ----------------------------------------------
+            # ------------------------------------------------
 
             try:
 
@@ -173,6 +199,7 @@ if analyse_button:
                     df = pd.read_csv(
                         uploaded_file
                     )
+
 
                 elif (
                     file_name.endswith(".xlsx")
@@ -183,6 +210,7 @@ if analyse_button:
                         uploaded_file
                     )
 
+
                 else:
 
                     st.error(
@@ -191,6 +219,7 @@ if analyse_button:
                     )
 
                     st.stop()
+
 
             except Exception:
 
@@ -202,9 +231,9 @@ if analyse_button:
                 st.stop()
 
 
-            # ----------------------------------------------
-            # KEEP NUMERICAL COLUMNS
-            # ----------------------------------------------
+            # ------------------------------------------------
+            # FIND NUMERICAL COLUMNS
+            # ------------------------------------------------
 
             numeric_df = df.select_dtypes(
                 include=[np.number]
@@ -220,21 +249,45 @@ if analyse_button:
                 st.stop()
 
 
-            # Convert to one numerical array
-            data = (
-                numeric_df
-                .to_numpy()
-                .flatten()
-            )
+            # ------------------------------------------------
+            # LET USER SELECT COLUMN IF THERE ARE MULTIPLE
+            # ------------------------------------------------
+
+            if len(numeric_df.columns) > 1:
+
+                selected_column = st.selectbox(
+                    "Multiple numerical columns were found. "
+                    "Select the variable you would like to analyse:",
+                    numeric_df.columns
+                )
+
+                data = numeric_df[
+                    selected_column
+                ].to_numpy()
+
+
+            else:
+
+                selected_column = numeric_df.columns[0]
+
+                data = numeric_df[
+                    selected_column
+                ].to_numpy()
 
 
             # Remove missing values
             data = data[
-                ~np.isnan(data)
+                ~pd.isna(data)
             ]
 
 
-            # Too few valid observations
+            # Convert to float
+            data = np.asarray(
+                data,
+                dtype=float
+            )
+
+
             if len(data) < 5:
 
                 st.error(
@@ -245,10 +298,7 @@ if analyse_button:
                 st.stop()
 
 
-            # Infinite / invalid values
-            if not np.all(
-                np.isfinite(data)
-            ):
+            if not np.all(np.isfinite(data)):
 
                 st.error(
                     "⚠️ The uploaded data contains invalid or "
@@ -258,26 +308,44 @@ if analyse_button:
                 st.stop()
 
 
-        # ==================================================
-        # STEP 2: FIT DISTRIBUTIONS
-        # ==================================================
+        # ====================================================
+        # FIT DISTRIBUTIONS
+        # ====================================================
 
         results, discrete = fit_best_distribution(
             data
         )
 
 
-        # Check fitting results
         if results.empty:
 
-            raise ValueError(
-                "No distributions could be fitted to the data."
+            st.error(
+                "⚠️ No probability distribution could be fitted "
+                "to this dataset."
             )
 
+            st.stop()
 
-        # ==================================================
-        # STEP 3: FIND WINNING DISTRIBUTION
-        # ==================================================
+
+        # Remove invalid fitting results
+        valid_results = results.dropna(
+            subset=["aic"]
+        )
+
+
+        if valid_results.empty:
+
+            st.error(
+                "⚠️ None of the candidate distributions could "
+                "successfully fit this dataset."
+            )
+
+            st.stop()
+
+
+        # ====================================================
+        # WINNING DISTRIBUTION
+        # ====================================================
 
         winning_dist, param_dict = (
             extract_winning_parameters(
@@ -292,11 +360,12 @@ if analyse_button:
         )
 
 
-        # ==================================================
+        # ====================================================
         # 2. RESULTS
-        # ==================================================
+        # ====================================================
 
         st.header("2. Results")
+
 
         col1, col2, col3 = st.columns(3)
 
@@ -304,37 +373,36 @@ if analyse_button:
         with col1:
 
             st.metric(
-                label="🏆 Best Fit",
-                value=winning_dist
+                "🏆 Best Fit",
+                winning_dist
             )
 
 
         with col2:
 
-            if discrete:
-                data_type = "Discrete"
-
-            else:
-                data_type = "Continuous"
-
+            data_type = (
+                "Discrete"
+                if discrete
+                else "Continuous"
+            )
 
             st.metric(
-                label="📊 Data Type",
-                value=data_type
+                "📊 Data Type",
+                data_type
             )
 
 
         with col3:
 
             st.metric(
-                label="🔢 Observations",
-                value=len(data)
+                "🔢 Observations",
+                len(data)
             )
 
 
-        # ==================================================
+        # ====================================================
         # 3. DISTRIBUTION RANKING
-        # ==================================================
+        # ====================================================
 
         st.header(
             "3. Distribution Ranking"
@@ -344,11 +412,15 @@ if analyse_button:
         display_results = results.copy()
 
 
-        # Remove distributions that failed to fit
+        # Remove distributions that failed
         display_results = display_results.dropna(
             subset=["aic"]
         )
 
+
+        # ----------------------------------------------------
+        # DISCRETE
+        # ----------------------------------------------------
 
         if discrete:
 
@@ -370,6 +442,10 @@ if analyse_button:
             ]
 
 
+        # ----------------------------------------------------
+        # CONTINUOUS
+        # ----------------------------------------------------
+
         else:
 
             display_results = display_results[
@@ -390,9 +466,7 @@ if analyse_button:
             ]
 
 
-        display_results = display_results.round(
-            4
-        )
+        display_results = display_results.round(4)
 
 
         display_results.insert(
@@ -419,9 +493,9 @@ if analyse_button:
         )
 
 
-        # ==================================================
+        # ====================================================
         # 4. ESTIMATED PARAMETERS
-        # ==================================================
+        # ====================================================
 
         st.header(
             "4. Estimated Parameters"
@@ -486,7 +560,10 @@ if analyse_button:
         )
 
 
-        # Replace generic parameter names
+        # ----------------------------------------------------
+        # FRIENDLY PARAMETER NAMES
+        # ----------------------------------------------------
+
         if (
             len(parameters) > 0
             and str(
@@ -532,15 +609,28 @@ if analyse_button:
 
                 with col:
 
+                    try:
+
+                        displayed_value = (
+                            f"{float(value):.4f}"
+                        )
+
+                    except Exception:
+
+                        displayed_value = str(
+                            value
+                        )
+
+
                     st.metric(
-                        label=parameter,
-                        value=f"{value:.4f}"
+                        parameter,
+                        displayed_value
                     )
 
 
-        # ==================================================
+        # ====================================================
         # 5. MOMENTS COMPARISON
-        # ==================================================
+        # ====================================================
 
         st.header(
             "5. Moments Comparison"
@@ -564,9 +654,9 @@ if analyse_button:
         )
 
 
-        # ----------------------------------------------
-        # FIRST FOUR RAW MOMENTS
-        # ----------------------------------------------
+        # ----------------------------------------------------
+        # RAW MOMENTS
+        # ----------------------------------------------------
 
         st.subheader(
             "First Four Raw Moments"
@@ -600,15 +690,15 @@ if analyse_button:
 
 
         st.caption(
-            "A smaller absolute difference means the "
-            "fitted distribution more closely matches "
-            "that moment of the observed data."
+            "A smaller absolute difference means the fitted "
+            "distribution more closely matches that moment "
+            "of the observed data."
         )
 
 
-        # ----------------------------------------------
-        # DISTRIBUTION CHARACTERISTICS
-        # ----------------------------------------------
+        # ----------------------------------------------------
+        # CHARACTERISTICS
+        # ----------------------------------------------------
 
         st.subheader(
             "Distribution Characteristics"
@@ -635,14 +725,14 @@ if analyse_button:
 
 
         st.caption(
-            "These statistics compare the shape and spread "
-            "of the raw data with the fitted distribution."
+            "These statistics compare the location, spread "
+            "and shape of the raw data with the fitted distribution."
         )
 
 
-        # ==================================================
+        # ====================================================
         # 6. DATA VISUALIZATION
-        # ==================================================
+        # ====================================================
 
         st.header(
             "6. Data Visualization"
@@ -663,9 +753,9 @@ if analyse_button:
         )
 
 
-        # ==================================================
-        # IDENTIFY FITTED DISTRIBUTION
-        # ==================================================
+        # ====================================================
+        # DISTRIBUTION MAPPING
+        # ====================================================
 
         if not discrete:
 
@@ -683,6 +773,14 @@ if analyse_button:
 
                 "Uniform": stats.uniform
             }
+
+
+            if winning_dist not in continuous_distributions:
+
+                raise ValueError(
+                    f"Visualization is not available for "
+                    f"{winning_dist}."
+                )
 
 
             fitted_distribution = (
@@ -710,6 +808,14 @@ if analyse_button:
             }
 
 
+            if winning_dist not in discrete_distributions:
+
+                raise ValueError(
+                    f"Visualization is not available for "
+                    f"{winning_dist}."
+                )
+
+
             fitted_distribution = (
                 discrete_distributions[
                     winning_dist
@@ -722,9 +828,9 @@ if analyse_button:
         )
 
 
-        # ==================================================
+        # ====================================================
         # GRAPH 1
-        # ==================================================
+        # ====================================================
 
         st.subheader(
             "Empirical vs Fitted Distribution"
@@ -736,9 +842,9 @@ if analyse_button:
         )
 
 
-        # ----------------------------------------------
-        # CONTINUOUS
-        # ----------------------------------------------
+        # ----------------------------------------------------
+        # CONTINUOUS GRAPH
+        # ----------------------------------------------------
 
         if not discrete:
 
@@ -759,7 +865,6 @@ if analyse_button:
                 data
             )
 
-
             data_range = (
                 data_max - data_min
             )
@@ -767,7 +872,12 @@ if analyse_button:
 
             if data_range == 0:
 
-                small_offset = 0
+                x = np.linspace(
+                    data_min - 1,
+                    data_max + 1,
+                    500
+                )
+
 
             else:
 
@@ -775,12 +885,11 @@ if analyse_button:
                     data_range * 0.005
                 )
 
-
-            x = np.linspace(
-                data_min + small_offset,
-                data_max - small_offset,
-                500
-            )
+                x = np.linspace(
+                    data_min + small_offset,
+                    data_max - small_offset,
+                    500
+                )
 
 
             y = fitted.pdf(
@@ -807,9 +916,9 @@ if analyse_button:
             )
 
 
-        # ----------------------------------------------
-        # DISCRETE
-        # ----------------------------------------------
+        # ----------------------------------------------------
+        # DISCRETE GRAPH
+        # ----------------------------------------------------
 
         else:
 
@@ -856,10 +965,6 @@ if analyse_button:
             )
 
 
-        # ----------------------------------------------
-        # GRAPH FORMATTING
-        # ----------------------------------------------
-
         ax1.set_title(
             f"Raw Data vs Fitted "
             f"{winning_dist} Distribution"
@@ -898,9 +1003,9 @@ if analyse_button:
         )
 
 
-        # ==================================================
+        # ====================================================
         # GRAPH 2: CDF
-        # ==================================================
+        # ====================================================
 
         st.subheader(
             "Empirical CDF vs Fitted CDF"
@@ -912,9 +1017,9 @@ if analyse_button:
         )
 
 
-        # ----------------------------------------------
+        # ----------------------------------------------------
         # CONTINUOUS CDF
-        # ----------------------------------------------
+        # ----------------------------------------------------
 
         if not discrete:
 
@@ -954,9 +1059,9 @@ if analyse_button:
             )
 
 
-        # ----------------------------------------------
+        # ----------------------------------------------------
         # DISCRETE CDF
-        # ----------------------------------------------
+        # ----------------------------------------------------
 
         else:
 
@@ -998,10 +1103,6 @@ if analyse_button:
                 label=f"Fitted {winning_dist} CDF"
             )
 
-
-        # ----------------------------------------------
-        # CDF FORMATTING
-        # ----------------------------------------------
 
         ax2.set_title(
             f"Empirical CDF vs Fitted "
@@ -1052,9 +1153,9 @@ if analyse_button:
         )
 
 
-        # ==================================================
+        # ====================================================
         # 7. INTERPRETATION
-        # ==================================================
+        # ====================================================
 
         st.header(
             "7. Interpretation"
@@ -1069,9 +1170,9 @@ if analyse_button:
         best_result = results.iloc[0]
 
 
-        # ----------------------------------------------
+        # ----------------------------------------------------
         # BEST FIT
-        # ----------------------------------------------
+        # ----------------------------------------------------
 
         st.subheader(
             "🏆 Best-Fitting Distribution"
@@ -1086,9 +1187,9 @@ if analyse_button:
         )
 
 
-        # ----------------------------------------------
+        # ----------------------------------------------------
         # GOODNESS OF FIT
-        # ----------------------------------------------
+        # ----------------------------------------------------
 
         st.subheader(
             "📊 Goodness-of-Fit"
@@ -1106,18 +1207,20 @@ if analyse_button:
             ]
 
 
-            st.write(
-                f"The Chi-Square statistic is "
-                f"**{gof_stat:.4f}**, with a p-value of "
-                f"**{p_value:.4f}**."
-            )
+            if pd.notna(gof_stat):
+
+                st.write(
+                    f"The Chi-Square statistic is "
+                    f"**{gof_stat:.4f}**, with a p-value of "
+                    f"**{p_value:.4f}**."
+                )
 
 
-            st.caption(
-                "A smaller Chi-Square statistic indicates "
-                "that the fitted probabilities are closer "
-                "to the observed frequencies."
-            )
+                st.caption(
+                    "A smaller Chi-Square statistic indicates "
+                    "that the fitted probabilities are closer "
+                    "to the observed frequencies."
+                )
 
 
         else:
@@ -1131,55 +1234,59 @@ if analyse_button:
             ]
 
 
-            st.write(
-                f"The Kolmogorov-Smirnov (KS) statistic is "
-                f"**{gof_stat:.4f}**, with a p-value of "
-                f"**{p_value:.4f}**."
-            )
+            if pd.notna(gof_stat):
+
+                st.write(
+                    f"The Kolmogorov-Smirnov (KS) statistic is "
+                    f"**{gof_stat:.4f}**, with a p-value of "
+                    f"**{p_value:.4f}**."
+                )
 
 
-            st.caption(
-                "The KS statistic measures the maximum "
-                "difference between the empirical and fitted "
-                "cumulative distributions. A smaller value "
-                "indicates a closer fit."
-            )
+                st.caption(
+                    "The KS statistic measures the maximum "
+                    "difference between the empirical and fitted "
+                    "cumulative distributions. A smaller value "
+                    "indicates a closer fit."
+                )
 
 
-        # ----------------------------------------------
+        # ----------------------------------------------------
         # STATISTICAL INTERPRETATION
-        # ----------------------------------------------
+        # ----------------------------------------------------
 
         st.subheader(
             "🔎 Statistical Interpretation"
         )
 
 
-        if p_value >= 0.05:
+        if pd.notna(p_value):
 
-            st.success(
-                f"At the 5% significance level, the "
-                f"goodness-of-fit test does not provide "
-                f"sufficient evidence to reject the "
-                f"{winning_dist} distribution."
-            )
+            if p_value >= 0.05:
 
-
-        else:
-
-            st.warning(
-                f"At the 5% significance level, the "
-                f"goodness-of-fit test provides evidence "
-                f"against the {winning_dist} distribution. "
-                f"Although it ranks best among the distributions "
-                f"tested, its absolute fit should be interpreted "
-                f"with caution."
-            )
+                st.success(
+                    f"At the 5% significance level, the "
+                    f"goodness-of-fit test does not provide "
+                    f"sufficient evidence to reject the "
+                    f"{winning_dist} distribution."
+                )
 
 
-        # ----------------------------------------------
+            else:
+
+                st.warning(
+                    f"At the 5% significance level, the "
+                    f"goodness-of-fit test provides evidence "
+                    f"against the {winning_dist} distribution. "
+                    f"Although it ranks best among the distributions "
+                    f"tested, its absolute fit should be interpreted "
+                    f"with caution."
+                )
+
+
+        # ----------------------------------------------------
         # SUMMARY
-        # ----------------------------------------------
+        # ----------------------------------------------------
 
         st.subheader(
             "💡 Summary"
@@ -1195,9 +1302,9 @@ if analyse_button:
         )
 
 
-        # ==================================================
+        # ====================================================
         # GLOSSARY
-        # ==================================================
+        # ====================================================
 
         with st.expander(
             "ℹ️ Understanding the Results"
@@ -1228,9 +1335,9 @@ including its location, spread and shape.
             )
 
 
-    # ==================================================
-    # FRIENDLY FALLBACK ERROR
-    # ==================================================
+    # ========================================================
+    # ERROR HANDLING
+    # ========================================================
 
     except Exception as e:
 
@@ -1239,6 +1346,7 @@ including its location, spread and shape.
             "Please check your data and try again."
         )
 
+
         with st.expander(
             "Technical details"
         ):
@@ -1246,4 +1354,3 @@ including its location, spread and shape.
             st.code(
                 str(e)
             )
-
